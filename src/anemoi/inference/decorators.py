@@ -181,10 +181,6 @@ class format_dataset_name:
         if not any("metadata" in inspect.signature(klass.__init__).parameters for klass in cls.mro()):
             raise TypeError(f"`{self.__class__.__name__}` can only be used to decorate classes that take `metadata`")
 
-        class DefaultFormat(dict):
-            def __missing__(self, key):
-                return f"{{{key}}}"  # if the key is not found, return the placeholder unchanged
-
         class WrappedClass(cls):
             def __init__(wrapped_cls, context: Context, metadata: Metadata, *args: Any, **kwargs: Any) -> Any:
                 assert self.arg in kwargs, f"{self.arg} not found in decorated class arguments: {kwargs}"
@@ -193,7 +189,11 @@ class format_dataset_name:
                 ), f"{self.arg} must be a string to use `{self.__class__.__name__}` decorator"
 
                 name = metadata.dataset_name
-                kwargs[self.arg] = kwargs[self.arg].format_map(DefaultFormat(dataset=name, dataset_name=name))
+                # Substitute only the {dataset}/{dataset_name} placeholders. A str.format_map
+                # here would also consume the format specifiers on the still-unresolved
+                # {date}/{time:04}/{step:03} placeholders (rendered later), so output paths
+                # would lose their zero-padding (e.g. 202402010_6.grib).
+                kwargs[self.arg] = kwargs[self.arg].replace("{dataset_name}", name).replace("{dataset}", name)
                 super().__init__(context, metadata, *args, **kwargs)
 
         return type(cls.__name__, (WrappedClass,), {})
